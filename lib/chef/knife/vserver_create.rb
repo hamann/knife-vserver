@@ -95,7 +95,7 @@ class Chef
         :proc => Proc.new { |name| name.strip },
         :default => nil
 
-      option :container_memory,
+      option :container_ram,
         :short => "-R RAM",
         :long => "--container-ram",
         :description => "Amount of Ram (in MB) for the container",
@@ -115,65 +115,15 @@ class Chef
         :description => "Tinc configuration for the container, e.g. (-T \"test_vpn:172.10.10.1/16,172.10.10.16/16\")",
         :default => Hash.new
 
-      def prepare_tinc(value)
-        return if value.empty?
-
-        result = Hash.new
-        begin
-          key, addresses = value.split(":")
-          result[key] = { 'addresses' => addresses.split(",") }
-        rescue
-          ui.error("Could not parse argument for tinc configuration!")
-        end
-        result
-      end
-
       def run
         config[:manual] = true
         super
       end
 
       def process(node, session)
-        tinc = prepare_tinc(config[:container_tinc])
-
-        h = ::Knife::Vserver::Host.create(node, session)
-        container = ::Knife::Vserver::Container.new(config[:container_name], h)
-
-        dev_id = 0
-        config[:container_addresses].each do |addr|
-          ip = IPAddress(addr.strip)
-          iface = ::Knife::Vserver::Interface.new
-          iface.address = ip.address
-          iface.netmask = ip.netmask
-          iface.device_id = dev_id
-          dev_id = dev_id + 1
-
-          container.interfaces << iface
-        end
-
-        if tinc.count > 0
-          vpn = tinc.flatten[0]
-          addresses = tinc.flatten[1]['addresses']
-          addresses.each do |addr|
-            ip = IPAddress(addr.strip)
-            iface = ::Knife::Vserver::Interface.new
-            iface.address = ip.address
-            iface.netmask = ip.netmask
-            iface.device = vpn
-            iface.is_tinc_interface = true
-            iface.device_id = dev_id
-            dev_id = dev_id + 1
-
-            container.interfaces << iface
-          end
-        end
-
-        container.distribution = config[:container_distribution]
-        container.hostname = config[:container_hostname]
-        container.ram = config[:container_memory] * 1024 * 1024
-        container.swap = config[:container_swap] * 1024 * 1024
-        #container.is_running = true
-        h.add_new_container(container)
+        host = ::Knife::Vserver::Host.create(node, session)
+        container = ::Knife::Vserver::Container.create_new(config, host)
+        host.create_new_container!(container)
       end
     end
   end

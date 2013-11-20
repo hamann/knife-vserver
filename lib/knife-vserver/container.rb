@@ -33,15 +33,58 @@ module Knife
         "#{((@swap.to_f - ram.to_f) / 1024 ** 2).to_i} MB"
       end
 
-      #def node
-      #  if @chef_node.nil?
-      #    begin
-      #    @chef_node = Chef::Node.load(@hostname)
-      #    rescue
-      #    end
-      #  end
-      #  @chef_node
-      #end
+      def self.prepare_tinc_from_config(config)
+        return if config.empty?
+
+        result = Hash.new
+        begin
+          key, addresses = config.split(":")
+          result[key] = { 'addresses' => addresses.split(",") }
+        rescue
+          ui.error("Could not parse argument for tinc configuration!")
+        end
+        result
+      end
+
+      def self.create_new(config, h)
+        container = Container.new(config[:container_name], h)
+        dev_id = 0
+        config[:container_addresses].each do |addr|
+          ip = IPAddress(addr.strip)
+          iface = Interface.new
+          iface.address = ip.address
+          iface.netmask = ip.netmask
+          iface.device_id = dev_id
+          dev_id = dev_id + 1
+
+          container.interfaces << iface
+        end
+
+        tinc = self.prepare_tinc_from_config(config[:container_tinc])
+        if tinc && tinc.count > 0
+          vpn = tinc.flatten[0]
+          addresses = tinc.flatten[1]['addresses']
+          addresses.each do |addr|
+            ip = IPAddress(addr.strip)
+            iface = Interface.new
+            iface.address = ip.address
+            iface.netmask = ip.netmask
+            iface.device = vpn
+            iface.is_tinc_interface = true
+            iface.device_id = dev_id
+            dev_id = dev_id + 1
+
+            container.interfaces << iface
+          end
+        end
+
+        container.distribution = config[:container_distribution]
+        container.hostname = config[:container_hostname]
+        container.ram = config[:container_ram].to_i * 1024 ** 2
+        container.swap = config[:container_swap].to_i * 1024 ** 2
+
+        container
+      end
     end
   end
 end

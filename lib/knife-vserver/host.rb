@@ -16,18 +16,18 @@ module Knife
         @session = nil
       end
 
-      def container_exist?(name)
+      def container_exists?(name)
         @containers.select { |n| n.name == name }.count > 0
-        #false
       end
 
-      def add_new_container(container)
+      def exec_ssh(cmd, raise_error = true)
+        ShellCommand.exec("sudo " + cmd, @session, { :dont_raise_error => !raise_error })
+      end
+
+      def create_new_container!(container)
         validate_new_container(container)
         load_dummy_module
-        create_container(container)
-      end
 
-      def create_container(container)
         container.ctx = next_context_id
         dummy_ifs = unused_dummy_interfaces
 
@@ -43,17 +43,15 @@ module Knife
           "#{cmd_addresses.join(" ")} -- -d #{container.distribution}"
 
         template_path = "#{@config_path}/templates/#{container.distribution}-base.tar.gz"
-        if ShellCommand.exec("test -e #{template_path}",
-                             session,
-                             { :dont_raise_error => true }).succeeded?
-          create_cmd = "sudo vserver #{container.name} build -m template " +
+        if exec_ssh("test -e #{template_path}", false).succeeded?
+          create_cmd = "vserver #{container.name} build -m template " +
             "#{create_cmd_args} -t #{template_path}"
         else
-          create_cmd = "sudo vserver #{container.name} build -m debootstrap #{create_cmd_args}"
+          create_cmd = "vserver #{container.name} build -m debootstrap #{create_cmd_args}"
         end
 
         puts "Creating container, please wait..."
-        ShellCommand.exec(create_cmd, @session)
+        exec_ssh(create_cmd)
 
         add_flags(container)
         apply_memory_limits(container)
@@ -63,7 +61,7 @@ module Knife
         @containers << container
 
         puts "Starting up..." 
-        ShellCommand.exec("sudo vserver #{container.name} start", session)
+        exec_ssh("vserver #{container.name} start")
         container.is_running = true
 
         fix_hostname(container)
@@ -77,52 +75,48 @@ module Knife
         return if tinc_ifaces.count == 0
         tinc_ifaces.each do |iface|
           path = "#{container.config_path}/interfaces/#{iface.device_id}"
-          cmd = "
-          mkdir #{path};
-          echo #{iface.address} > #{path}/ip;
-          echo #{iface.device} > #{path}/dev;
-          echo #{iface.netmask} > #{path}/mask;
-          "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+          cmd = "mkdir #{path}; echo #{iface.address} > #{path}/ip; echo #{iface.device} > #{path}/dev;
+          echo #{iface.netmask} > #{path}/mask;"
+          exec_ssh("sh -c \"#{cmd}\"")
 
           ip = IPAddress("#{iface.address}/#{iface.netmask}")
           path = "/etc/tinc/#{iface.device}/up.d/vserver-up"
           cmd = "echo ip addr add #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+          exec_ssh("sh -c \"#{cmd}\"")
 
           path = "/etc/tinc/#{iface.device}/down.d/vserver-down"
           cmd = "echo ip addr del #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+          exec_ssh("sh -c \"#{cmd}\"")
         end
       end
 
       def mark_for_start_at_boot(container)
         path = "#{container.config_path}/apps/init/mark"
-        ShellCommand.exec("echo default | sudo tee #{path}", @session)
+        exec_ssh("echo default | sudo tee #{path}")
       end
 
       def create_root_password(container)
         pass = [*('A'..'Z')].sample(12).join.downcase
-        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo \"root:#{pass}\" | chpasswd '", @session)
+        exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo \"root:#{pass}\" | chpasswd '")
         pass
       end
 
       def fix_hostname(container)
         hostname = container.hostname
-        short = container.hostname.split(".").first
-        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo \"127.0.0.1 #{hostname} #{short}\" >> /etc/hosts'", @session)
-        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo #{short} > /etc/hostname'", @session)
+        short = hostname.split(".").first
+        exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo \"127.0.0.1 #{hostname} #{short}\" >> /etc/hosts'")
+        exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo #{short} > /etc/hostname'")
       end
 
       def start_ssh_server(container)
         cmd = "/etc/init.d/ssh stop; rm /etc/ssh/ssh_host_*; dpkg-reconfigure openssh-server; /etc/init.d/ssh start"
-        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c '#{cmd}'", @session)
+        exec_ssh("vserver #{container.name} exec /bin/sh -c '#{cmd}'")
       end
 
       def add_flags(container)
         path = "#{container.config_path}/flags"
         cmd = "echo \"VIRT_MEM\nVIRT_UPTIME\nVIRT_LOAD\nVIRT_CPU\" | sudo tee #{path}"
-        ShellCommand.exec(cmd, @session)
+        exec_ssh(cmd)
       end
 
       def apply_memory_limits(container)
@@ -134,41 +128,30 @@ module Knife
         ram = container.ram
         swap = container.ram + container.swap
         cgroup_path = "#{container.config_path}/cgroup"
-        cmd = "
-        mkdir -p #{cgroup_path};
-        echo #{ram} > #{cgroup_path}/memory.limit_in_bytes;
-        echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;
-        "
-        ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+        cmd = "mkdir -p #{cgroup_path}; echo #{ram} > #{cgroup_path}/memory.limit_in_bytes;
+        echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;"
+        cmd = "sh -c \"#{cmd}\""
+        exec_ssh(cmd)
 
         if container.is_running && @cgroups_enabled
           puts "Applying cgroup memory limits to running instance"
           cgroup_path = "/dev/cgroup/#{container.name}"
-          cmd = "
-          echo #{ram} > #{cgroup_path}/memory.limit_in_bytes;
-          echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;
-          "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+          cmd = "echo #{ram} > #{cgroup_path}/memory.limit_in_bytes; echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;"
+          exec_ssh("sh -c \"#{cmd}\"")
         end
       end
 
       def apply_memory_limits_rlimits(container)
         rlimit_path = "#{container.config_path}/rlimits"
-        ram = container.ram / 4
-        swap = container.ram + container.swap / 4
-        cmd = "
-        mkdir -p #{rlimit_path};
-        echo #{ram} > #{rlimit_path}/rss.soft;
-        echo #{swap} > #{rlimit_path}/rss.hard;"
-        ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+        ram = (container.ram.to_f / 4).to_i
+        swap = ((container.ram + container.swap).to_f / 4).to_i
+        cmd = "mkdir -p #{rlimit_path}; echo #{ram} > #{rlimit_path}/rss.soft; echo #{swap} > #{rlimit_path}/rss.hard;"
+        exec_ssh("sh -c \"#{cmd}\"")
 
         if container.is_running && !@cgroups_enabled
           puts "Applying rlimits memory limits to running instance"
-          cmd = "
-          vlimit -c #{container.ctx} -S --rss #{ram};
-          vlimit -c #{container.ctx} --rss #{swap};
-          "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
+          cmd = "vlimit -c #{container.ctx} -S --rss #{ram}; vlimit -c #{container.ctx} --rss #{swap};"
+          exec_ssh("sh -c \"#{cmd}\"")
         end
       end
 
@@ -201,11 +184,11 @@ module Knife
       end
 
       def load_dummy_module
-        ShellCommand.exec("sudo modprobe dummy numdummies=40", @session)
+        exec_ssh("modprobe dummy numdummies=40")
       end
 
       def validate_new_container(container)
-        raise "Container #{container.name} already exists!" if container_exist?(container.name)
+        raise "Container #{container.name} already exists!" if container_exists?(container.name)
         raise "Container #{container.name} needs at least one ip address!" if container.interfaces.count == 0
         raise "Distribution #{container.distribution} isn't supported!" if container.distribution.match(/(squeeze|wheezy)/).nil?
         raise "Container #{container.name} has no hostname!" if container.hostname.nil?
@@ -214,60 +197,53 @@ module Knife
         end
 
         container.interfaces.select { |iface| iface.is_tinc_interface }.each do |iface|
-          unless ShellCommand.exec("sudo test -e /etc/tinc/#{iface.device}", @session,
-                               { :dont_raise_error => true }).succeeded?
+          unless exec_ssh("test -e /etc/tinc/#{iface.device}", false).succeeded?
             raise "This host isn't configured for vpn #{iface.device}!"
           end
         end
       end
 
+      def self.exec_ssh(cmd, session, raise_error = true)
+        ShellCommand.exec("sudo " + cmd, session, { :dont_raise_error => !raise_error })
+      end
+
       def self.create(node, session)
         host = Host.new(node)
         host.session = session
-        return host unless ShellCommand.exec("sudo test -e #{host.config_path}", session, 
-                                             { :dont_raise_error => true }).succeeded?
+        return host unless self.exec_ssh("test -e #{host.config_path}", session, false).succeeded?
 
-        host.cgroups_enabled = ShellCommand.exec("mount |grep vserver|grep cgroup", session,
-                                                 { :dont_raise_error => true }).succeeded?
+        host.cgroups_enabled = self.exec_ssh("mount |grep vserver|grep cgroup", session, false).succeeded?
 
-        entries = ShellCommand.exec("sudo ls -ls /etc/vservers | tail -n+2 |awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n")
+        entries = self.exec_ssh("ls -ls /etc/vservers | tail -n+2 |awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n")
         entries.each do |n|
 
-          c = Knife::Vserver::Container.new(n, host)
-          next unless ShellCommand.exec("sudo test -d #{c.config_path} && sudo test -e #{c.config_path}/context", session,
-                                        { :dont_raise_error => true }).succeeded?
+          c = Container.new(n, host)
+          next unless self.exec_ssh("test -d #{c.config_path} && sudo test -e #{c.config_path}/context", session, false).succeeded?
 
-          c.ctx = ShellCommand.exec("sudo cat #{c.config_path}/context", session).stdout.strip
-          c.node_name = ShellCommand.exec("sudo cat #{c.config_path}/uts/nodename", session).stdout.strip
-          c.is_running = ShellCommand.exec("sudo vserver-info #{c.name} RUNNING", 
-                                           session, { :dont_raise_error => true }).succeeded?
+          c.ctx = self.exec_ssh("cat #{c.config_path}/context", session).stdout.strip
+          c.node_name = self.exec_ssh("cat #{c.config_path}/uts/nodename", session).stdout.strip
+          c.is_running = self.exec_ssh("vserver-info #{c.name} RUNNING",session, false).succeeded?
 
-          c.hostname = ShellCommand.exec("sudo vserver #{c.name} exec hostname -f", session).stdout.strip if c.is_running
+          c.hostname = self.exec_ssh("vserver #{c.name} exec hostname -f", session).stdout.strip if c.is_running
 
           interface_path = "#{c.config_path}/interfaces"
-          ShellCommand.exec("sudo ls -ls #{interface_path} | egrep \"^. d\" | awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n").each do |if_n|
+          self.exec_ssh("ls -ls #{interface_path} | egrep \"^. d\" | awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n").each do |if_n|
             iface = Interface.new
             iface.device_id = if_n
-            iface.device = ShellCommand.exec("sudo cat #{interface_path}/#{if_n}/dev", session).stdout.strip
-            iface.address = ShellCommand.exec("sudo cat #{interface_path}/#{if_n}/ip", session).stdout.strip
-            if ShellCommand.exec("test -e #{interface_path}/#{if_n}/mask", session,
-                                 { :dont_raise_error => true }).succeeded?
-              iface.netmask = ShellCommand.exec("sudo cat #{interface_path}/#{if_n}/mask", session).stdout.strip
+            iface.device = self.exec_ssh("cat #{interface_path}/#{if_n}/dev", session).stdout.strip
+            iface.address = self.exec_ssh("cat #{interface_path}/#{if_n}/ip", session).stdout.strip
+            if self.exec_ssh("test -e #{interface_path}/#{if_n}/mask", session, false).succeeded?
+              iface.netmask = self.exec_ssh("cat #{interface_path}/#{if_n}/mask", session).stdout.strip
             end
             c.interfaces << iface
           end
 
-          if host.cgroups_enabled &&
-            ShellCommand.exec("sudo test -d #{c.config_path}/cgroup", session,
-                              { :dont_raise_error => true }).succeeded?
-
-            c.ram = ShellCommand.exec("sudo cat #{c.config_path}/cgroup/memory.limit_in_bytes", session).stdout.strip
-            c.swap = ShellCommand.exec("sudo cat #{c.config_path}/cgroup/memory.memsw.limit_in_bytes", session).stdout.strip
-          elsif ShellCommand.exec("sudo test -d #{c.config_path}/rlimits", session,
-                                    { :dont_raise_error => true }).succeeded?
-
-            c.ram = ShellCommand.exec("sudo cat #{c.config_path}/rlimits/rss.soft", session).stdout.strip.to_i * 4 * 1024
-            c.swap = ShellCommand.exec("sudo cat #{c.config_path}/rlimits/rss.hard", session).stdout.strip.to_i * 4 * 1024
+          if host.cgroups_enabled && self.exec_ssh("test -d #{c.config_path}/cgroup", session, false).succeeded?
+            c.ram = self.exec_ssh("cat #{c.config_path}/cgroup/memory.limit_in_bytes", session).stdout.strip
+            c.swap = self.exec_ssh("cat #{c.config_path}/cgroup/memory.memsw.limit_in_bytes", session).stdout.strip
+          elsif exec_ssh("test -d #{c.config_path}/rlimits", session, false).succeeded?
+            c.ram = self.exec_ssh("cat #{c.config_path}/rlimits/rss.soft", session).stdout.strip.to_i * 4 * 1024
+            c.swap = self.exec_ssh("cat #{c.config_path}/rlimits/rss.hard", session).stdout.strip.to_i * 4 * 1024
           end
 
           host.containers << c 

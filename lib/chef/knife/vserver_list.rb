@@ -79,6 +79,8 @@ class Chef
 
       def process(node, session)
         h = ::Knife::Vserver::Host.create(node, session)
+        ui.info "\nCGroups enabled: #{h.cgroups_enabled}\n\n"
+
         h.containers.sort { |n, m| n.ctx <=> m.ctx }.each do |c|
           ui.info "\tContext:\t#{c.ctx}"
           ui.info "\tName:\t\t#{c.name}"
