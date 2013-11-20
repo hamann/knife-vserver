@@ -66,6 +66,7 @@ module Knife
         ShellCommand.exec("sudo vserver #{container.name} start", session)
         container.is_running = true
 
+        fix_hostname(container)
         pass = create_root_password(container)
         start_ssh_server(container)
         puts "ready! Now login as root with password '#{pass}'"
@@ -104,6 +105,13 @@ module Knife
         pass = [*('A'..'Z')].sample(12).join.downcase
         ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo \"root:#{pass}\" | chpasswd '", @session)
         pass
+      end
+
+      def fix_hostname(container)
+        hostname = container.hostname
+        short = container.hostname.split(".").first
+        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo \"127.0.0.1 #{hostname} #{short}\" >> /etc/hosts'", @session)
+        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo #{short} > /etc/hostname'", @session)
       end
 
       def start_ssh_server(container)
