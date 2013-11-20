@@ -4,12 +4,13 @@ class Chef
   class Knife
     class VserverList < VserverBase
 
-      banner 'knife vserver list SERVER (options)'
+      banner 'knife vserver list QUERY (options)'
 
       deps do
         require 'net/ssh'
         require 'net/ssh/multi'
         require 'chef/knife/ssh'
+        require 'chef/node'
         require 'knife-vserver'
       end
 

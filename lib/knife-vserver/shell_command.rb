@@ -36,13 +36,17 @@ module Knife
 
         result = ShellCommandResult.new(cmd, stdout_data, stderr_data, exit_code.to_i)
 
-        raise_error!(result) if opts[:abort_on_error] && !result.succeeded?
+        if opts[:dont_raise_error].to_s != ''
+          raise_error!(result) unless opts[:dont_raise_error]
+        else
+          raise_error!(result)
+        end
 
         return result
       end
 
       def self.raise_error!(result)
-        raise RuntimeError, "Command failed! #{result.to_s}" 
+        raise RuntimeError, "Command failed! #{result.to_s}" unless result.succeeded?
       end
 
     end
