@@ -4,6 +4,8 @@ module Knife
 
       def self.exec(cmd, session, opts = {}, password = '')
 
+        Chef::Log.debug("Executing SSH Command: #{cmd}")
+
         stdout_data, stderr_data = "", ""
         exit_code, exit_signal = nil, nil
         session.open_channel do |channel|
@@ -35,6 +37,8 @@ module Knife
         session.loop
 
         result = ShellCommandResult.new(cmd, stdout_data, stderr_data, exit_code.to_i)
+
+        Chef::Log.debug("Command result: #{result.to_s}")
 
         if opts[:dont_raise_error].to_s != ''
           raise_error!(result) unless opts[:dont_raise_error]
