@@ -36,9 +36,18 @@ module Knife
           cmd_addresses << "--interface #{iface.device}:#{iface.address}/#{iface.netmask}"
         end
 
-        create_cmd = "sudo vserver #{container.name} build -m debootstrap " +
-          "--hostname #{container.hostname} --context #{container.ctx} " +
+        create_cmd_args = "--hostname #{container.hostname} --context #{container.ctx} " +
           "#{cmd_addresses.join(" ")} -- -d #{container.distribution}"
+
+        template_path = "/etc/vservers/templates/#{container.distribution}-base.tar.gz"
+        if ShellCommand.exec("test -e #{template_path}",
+                             session,
+                             { :dont_raise_error => true }).succeeded?
+          create_cmd = "sudo vserver #{container.name} build -m template " +
+            "#{create_cmd_args} -t #{template_path}"
+        else
+          create_cmd = "sudo vserver #{container.name} build -m debootstrap #{create_cmd_args}"
+        end
 
         puts "Executing #{create_cmd}"
         ShellCommand.exec(create_cmd, session)
