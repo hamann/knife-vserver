@@ -17,7 +17,8 @@ module Knife
       end
 
       def container_exist?(name)
-        false #@containers.select { |n| n.name == name }.count > 0
+        @containers.select { |n| n.name == name }.count > 0
+        #false
       end
 
       def add_new_container(container)
@@ -51,8 +52,8 @@ module Knife
           create_cmd = "sudo vserver #{container.name} build -m debootstrap #{create_cmd_args}"
         end
 
-        puts "Executing #{create_cmd}"
-        #ShellCommand.exec(create_cmd, session)
+        puts "Creating container, please wait..."
+        ShellCommand.exec(create_cmd, @session)
 
         add_flags(container)
         apply_memory_limits(container)
@@ -61,9 +62,13 @@ module Knife
 
         @containers << container
 
-        #puts "Starting container #{container.name}"
-        #ShellCommand.exec("sudo vserver #{container.name} start", session)
-        #container.is_running = true
+        puts "Starting up..." 
+        ShellCommand.exec("sudo vserver #{container.name} start", session)
+        container.is_running = true
+
+        pass = create_root_password(container)
+        start_ssh_server(container)
+        puts "ready! Now login as root with password '#{pass}'"
       end
 
       def add_tinc_interfaces(container)
@@ -77,28 +82,39 @@ module Knife
           echo #{iface.device} > #{path}/dev;
           echo #{iface.netmask} > #{path}/mask;
           "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
 
           ip = IPAddress("#{iface.address}/#{iface.netmask}")
           path = "/etc/tinc/#{iface.device}/up.d/vserver-up"
-          cmd = "echo ip addr add #{iface.address}/#{ip.prefix} dev #{iface.device} > #{path}"
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+          cmd = "echo ip addr add #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
+          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
 
           path = "/etc/tinc/#{iface.device}/down.d/vserver-down"
-          cmd = "echo ip addr del #{iface.address}/#{ip.prefix} dev #{iface.device} > #{path}"
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+          cmd = "echo ip addr del #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
+          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
         end
       end
 
       def mark_for_start_at_boot(container)
         path = "#{container.config_path}/apps/init/mark"
-        ShellCommand.exec("echo default | sudo tee #{path}", session)
+        ShellCommand.exec("echo default | sudo tee #{path}", @session)
+      end
+
+      def create_root_password(container)
+        pass = [*('A'..'Z')].sample(12).join.downcase
+        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c 'echo \"root:#{pass}\" | chpasswd '", @session)
+        pass
+      end
+
+      def start_ssh_server(container)
+        cmd = "/etc/init.d/ssh stop; rm /etc/ssh/ssh_host_*; dpkg-reconfigure openssh-server; /etc/init.d/ssh start"
+        ShellCommand.exec("sudo vserver #{container.name} exec /bin/sh -c '#{cmd}'", @session)
       end
 
       def add_flags(container)
         path = "#{container.config_path}/flags"
         cmd = "echo \"VIRT_MEM\nVIRT_UPTIME\nVIRT_LOAD\nVIRT_CPU\" | sudo tee #{path}"
-        ShellCommand.exec(cmd, session)
+        ShellCommand.exec(cmd, @session)
       end
 
       def apply_memory_limits(container)
@@ -124,7 +140,7 @@ module Knife
           echo #{ram} > #{cgroup_path}/memory.limit_in_bytes;
           echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;
           "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
         end
       end
 
@@ -135,9 +151,8 @@ module Knife
         cmd = "
         mkdir -p #{rlimit_path};
         echo #{ram} > #{rlimit_path}/rss.soft;
-        echo #{swap} > #{rlimit_path}/rss.hard;
-        "
-        ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+        echo #{swap} > #{rlimit_path}/rss.hard;"
+        ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
 
         if container.is_running && !@cgroups_enabled
           puts "Applying rlimits memory limits to running instance"
@@ -145,7 +160,7 @@ module Knife
           vlimit -c #{container.ctx} -S --rss #{ram};
           vlimit -c #{container.ctx} --rss #{swap};
           "
-          ShellCommand.exec("sudo sh -c \"#{cmd}\"", session)
+          ShellCommand.exec("sudo sh -c \"#{cmd}\"", @session)
         end
       end
 
