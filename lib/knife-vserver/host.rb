@@ -145,7 +145,7 @@ module Knife
         exec_ssh(cmd)
 
         if container.is_running && @cgroups_enabled
-          puts "Applying cgroup memory limits to running instance"
+          Chef::Log.debug("Applying cgroup memory limits to running instance")
           cgroup_path = "/dev/cgroup/#{container.name}"
           cmd = "echo #{ram} > #{cgroup_path}/memory.limit_in_bytes; echo #{swap} > #{cgroup_path}/memory.memsw.limit_in_bytes;"
           exec_ssh("sh -c \"#{cmd}\"")
@@ -160,7 +160,7 @@ module Knife
         exec_ssh("sh -c \"#{cmd}\"")
 
         if container.is_running && !@cgroups_enabled
-          puts "Applying rlimits memory limits to running instance"
+          Chef::Log.debug("Applying rlimits memory limits to running instance")
           cmd = "vlimit -c #{container.ctx} -S --rss #{ram}; vlimit -c #{container.ctx} --rss #{swap};"
           exec_ssh("sh -c \"#{cmd}\"")
         end
@@ -199,10 +199,17 @@ module Knife
       end
 
       def validate_new_container(container)
+        validate_container(container)
+
         raise "Container #{container.name} already exists!" if container_exists?(container.name)
         raise "Container #{container.name} needs at least one ip address!" if container.interfaces.count == 0
         raise "Distribution #{container.distribution} isn't supported!" if container.distribution.match(/(squeeze|wheezy)/).nil?
         raise "Container #{container.name} has no hostname!" if container.hostname.nil?
+        
+      end
+
+      def validate_container(container)
+        raise "No container name specified!" if container.name.to_s.empty?
         container.interfaces.each do |iface|
           raise "Device id for #{iface.address} is invalid!" if iface.device_id < 0
         end
@@ -257,8 +264,8 @@ module Knife
           end
 
           if host.cgroups_enabled && self.exec_ssh("test -d #{c.config_path}/cgroup", session, false).succeeded?
-            c.ram = self.exec_ssh("cat #{c.config_path}/cgroup/memory.limit_in_bytes", session).stdout.strip
-            c.swap = self.exec_ssh("cat #{c.config_path}/cgroup/memory.memsw.limit_in_bytes", session).stdout.strip
+            c.ram = self.exec_ssh("cat #{c.config_path}/cgroup/memory.limit_in_bytes", session).stdout.strip.to_i
+            c.swap = self.exec_ssh("cat #{c.config_path}/cgroup/memory.memsw.limit_in_bytes", session).stdout.strip.to_i
           elsif exec_ssh("test -d #{c.config_path}/rlimits", session, false).succeeded?
             c.ram = self.exec_ssh("cat #{c.config_path}/rlimits/rss.soft", session).stdout.strip.to_i * 4 * 1024
             c.swap = self.exec_ssh("cat #{c.config_path}/rlimits/rss.hard", session).stdout.strip.to_i * 4 * 1024

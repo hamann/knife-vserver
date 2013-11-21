@@ -28,6 +28,9 @@ class Chef
               exit 1
             end
           end
+        rescue => e
+          ui.error(e.message)
+          Chef::Log.error("Backtrace:\n\t#{e.backtrace.join("\n\t")}")
         ensure
           if cur_session
             cur_session.close unless cur_session.closed?

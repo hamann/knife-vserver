@@ -2,9 +2,9 @@ require 'chef/knife/vserver_base'
 
 class Chef
   class Knife
-    class VserverCreate < VserverBase
+    class VserverModifyMemory < VserverBase
 
-      banner 'knife vserver create SERVER (options)'
+      banner 'knife vserver modify memory SERVER (options)'
 
       deps do
         require 'net/ssh'
@@ -74,46 +74,19 @@ class Chef
         :proc => Proc.new { |name| name.strip },
         :default => nil
 
-      option :container_addresses,
-        :short => "-I ADDRESSES",
-        :long => "--container-addresses",
-        :description => "ADDRESSES is a comma seperated list of ip addresses",
-        :proc => Proc.new { |addresses| addresses.split(',') },
-        :default => Array.new
-
-      option :container_distribution,
-        :short => "-D DISTRIBUTION",
-        :long => "--container-distribution",
-        :description => "The container distribution",
-        :proc => Proc.new { |dist| dist.strip },
-        :default => 'squeeze'
-
-      option :container_hostname,
-        :short => "-H HOSTNAME",
-        :long => "--container-hostname",
-        :description => "The hostname for the container",
-        :proc => Proc.new { |name| name.strip },
-        :default => nil
-
       option :container_ram,
         :short => "-R RAM",
         :long => "--container-ram",
         :description => "Amount of Ram (in MB) for the container",
         :proc => Proc.new { |ram| ram.strip },
-        :default => 512
+        :default => nil
 
       option :container_swap,
         :short => "-S SWAP",
         :long => "--container-swap",
         :description => "Amount of Swap (in MB) for the container",
         :proc => Proc.new { |swap| swap.strip },
-        :default => 512
-
-      option :container_tinc,
-        :short => "-T TINC",
-        :long => "--container-tinc",
-        :description => "Tinc configuration for the container, e.g. (-T \"test_vpn:172.10.10.1/16,172.10.10.16/16\")",
-        :default => Hash.new
+        :default => nil
 
       def run
         config[:manual] = true
@@ -121,9 +94,28 @@ class Chef
       end
 
       def process(node, session)
+        if config[:container_name].to_s.empty?
+          ui.error("No container name defined")
+          exit 1
+        end
+
+        if config[:container_ram].nil? || config[:container_swap].nil?
+          ui.error("Ram and/or Swap must be defined")
+          exit 1
+        end
+
         host = ::Knife::Vserver::Host.create(node, session)
-        container = ::Knife::Vserver::Container.create_new(config, host)
-        host.create_new_container!(container)
+        container = host.containers.select { |n| n.name == config[:container_name] }.first
+        if container.nil?
+          ui.error("Container #{config[:container_name]} doesn't exist on #{host.node[:fqdn]}")
+          exit 1
+        end
+
+        container.ram = config[:container_ram].to_i * 1024 ** 2 unless config[:container_ram].nil?
+        container.swap = config[:container_swap].to_i * 1024 ** 2 unless config[:container_swap].nil?
+
+        host.apply_memory_limits(container)
+        ui.info("done")
       end
     end
   end
