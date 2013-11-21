@@ -68,6 +68,7 @@ module Knife
         exec_ssh("vserver #{container.name} start")
         container.is_running = true
 
+        add_apt_sources(container)
         fix_hostname(container)
         pass = create_root_password(container)
         start_ssh_server(container)
@@ -110,6 +111,12 @@ module Knife
         short = hostname.split(".").first
         exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo \"127.0.0.1 #{hostname} #{short}\" >> /etc/hosts'")
         exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo #{short} > /etc/hostname'")
+      end
+
+      def add_apt_sources(container)
+        dist = container.distribution
+        lines = "deb http://ftp2.de.debian.org/debian #{dist} main\ndeb http://security.debian.org/ #{dist}/updates main"
+        exec_ssh("vserver #{container.name} exec /bin/sh -c 'echo \"#{lines}\" > /etc/apt/sources.list'")
       end
 
       def start_ssh_server(container)
