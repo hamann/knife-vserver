@@ -8,7 +8,10 @@ module Knife
       attr_accessor :is_tinc_interface
       attr_accessor :device_id
 
-      def initialize
+      def initialize(address)
+        ip = IPAddress(address.strip)
+        @address = ip.address
+        @netmask = ip.netmask
         @is_tinc_interface = false
         @device_id = -1
       end

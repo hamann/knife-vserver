@@ -50,10 +50,7 @@ module Knife
         container = Container.new(config[:container_name], h)
         dev_id = 0
         config[:container_addresses].each do |addr|
-          ip = IPAddress(addr.strip)
-          iface = Interface.new
-          iface.address = ip.address
-          iface.netmask = ip.netmask
+          iface = Interface.new(addr)
           iface.device_id = dev_id
           dev_id = dev_id + 1
 
@@ -65,10 +62,7 @@ module Knife
           vpn = tinc.flatten[0]
           addresses = tinc.flatten[1]['addresses']
           addresses.each do |addr|
-            ip = IPAddress(addr.strip)
-            iface = Interface.new
-            iface.address = ip.address
-            iface.netmask = ip.netmask
+            iface = Interface.new(addr)
             iface.device = vpn
             iface.is_tinc_interface = true
             iface.device_id = dev_id

@@ -75,15 +75,40 @@ module Knife
         puts "ready! Now login as root with password '#{pass}'"
       end
 
+      def add_new_interfaces(container, interfaces)
+        dummy_ifs = unused_dummy_interfaces
+        interfaces.each do |iface|
+          next if iface.is_tinc_interface
+
+          iface.device = dummy_ifs.slice!(0)
+          device_ids = Array.new
+          container.interfaces.each { |cif| device_ids << cif.device_id }
+          iface.device_id = device_ids.sort.last + 1
+          container.interfaces << iface
+          create_interface_files(container, iface)
+
+          if container.is_running
+            ip = IPAddress("#{iface.address}/#{iface.netmask}")
+            exec_ssh("ifconfig #{iface.device} up")
+            exec_ssh("ip addr add #{ip.to_s}/#{ip.prefix} dev #{iface.device}")
+            exec_ssh("ifconfig #{iface.device} broadcast #{ip.broadcast.to_s}")
+            exec_ssh("naddress --add --nid #{container.ctx} --ip #{ip.to_s}/#{ip.prefix}")
+          end
+        end
+      end
+
+      def create_interface_files(container, interface)
+        path = "#{container.config_path}/interfaces/#{interface.device_id}"
+        cmd = "mkdir #{path}; echo #{interface.address} > #{path}/ip; echo #{interface.device} > #{path}/dev;
+        echo #{interface.netmask} > #{path}/mask;"
+        exec_ssh("sh -c \"#{cmd}\"")
+      end
+
       def add_tinc_interfaces(container)
         tinc_ifaces = container.interfaces.select { |n| n.is_tinc_interface }
         return if tinc_ifaces.count == 0
         tinc_ifaces.each do |iface|
-          path = "#{container.config_path}/interfaces/#{iface.device_id}"
-          cmd = "mkdir #{path}; echo #{iface.address} > #{path}/ip; echo #{iface.device} > #{path}/dev;
-          echo #{iface.netmask} > #{path}/mask;"
-          exec_ssh("sh -c \"#{cmd}\"")
-
+          create_interface_files(container, iface)
           ip = IPAddress("#{iface.address}/#{iface.netmask}")
           path = "/etc/tinc/#{iface.device}/up.d/vserver-up"
           cmd = "echo ip addr add #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
@@ -253,13 +278,15 @@ module Knife
           interface_path = "#{c.config_path}/interfaces"
           self.exec_ssh("ls -ls #{interface_path} | egrep \"^. d\" | awk '{print $10}'", session).stdout.gsub(/\r/,"").
             strip.split("\n").each do |if_n|
-            iface = Interface.new
-            iface.device_id = if_n
-            iface.device = self.exec_ssh("cat #{interface_path}/#{if_n}/dev", session).stdout.strip
-            iface.address = self.exec_ssh("cat #{interface_path}/#{if_n}/ip", session).stdout.strip
+            device = self.exec_ssh("cat #{interface_path}/#{if_n}/dev", session).stdout.strip
+            ip = self.exec_ssh("cat #{interface_path}/#{if_n}/ip", session).stdout.strip
+            netmask = "255.255.255.0"
             if self.exec_ssh("test -e #{interface_path}/#{if_n}/mask", session, false).succeeded?
-              iface.netmask = self.exec_ssh("cat #{interface_path}/#{if_n}/mask", session).stdout.strip
+              netmask = self.exec_ssh("cat #{interface_path}/#{if_n}/mask", session).stdout.strip
             end
+            iface = Interface.new("#{ip}/#{netmask}")
+            iface.device_id = if_n.to_i
+            iface.device = device
             c.interfaces << iface
           end
 
