@@ -7,6 +7,8 @@ module Knife
       attr_accessor :config_path
       attr_accessor :cgroups_enabled
       attr_accessor :session
+      attr_accessor :kernel_version
+      attr_accessor :util_vserver_version
 
       def initialize(node)
         @config_path = '/etc/vservers'
@@ -14,6 +16,8 @@ module Knife
         @cgroups_enabled = false
         @containers = Array.new
         @session = nil
+        @kernel_version = 'unknown'
+        @util_verserver_version = 'unknown'
       end
 
       def container_exists?(name)
@@ -212,9 +216,15 @@ module Knife
         host.session = session
         return host unless self.exec_ssh("test -e #{host.config_path}", session, false).succeeded?
 
+        host.kernel_version = self.exec_ssh("vserver-info - SYSINFO | grep -i kernel", session).
+          stdout.strip.split(":")[1].strip
+        host.util_vserver_version = self.exec_ssh("vserver-info - SYSINFO |grep -i util-vserver", session).
+          stdout.strip.match(/util-vserver: (.+);.+/)[1]
+        host.config_path = self.exec_ssh("vserver-info - SYSINFO |grep -i cfg-Directory", session).stdout.split(":")[1].strip
         host.cgroups_enabled = self.exec_ssh("mount |grep vserver|grep cgroup", session, false).succeeded?
 
-        entries = self.exec_ssh("ls -ls /etc/vservers | tail -n+2 |awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n")
+        entries = self.exec_ssh("ls -ls #{host.config_path} | tail -n+2 |awk '{print $10}'", session).
+          stdout.gsub(/\r/,"").strip.split("\n")
         entries.each do |n|
 
           c = Container.new(n, host)
@@ -227,7 +237,8 @@ module Knife
           c.hostname = self.exec_ssh("vserver #{c.name} exec hostname -f", session).stdout.strip if c.is_running
 
           interface_path = "#{c.config_path}/interfaces"
-          self.exec_ssh("ls -ls #{interface_path} | egrep \"^. d\" | awk '{print $10}'", session).stdout.gsub(/\r/,"").strip.split("\n").each do |if_n|
+          self.exec_ssh("ls -ls #{interface_path} | egrep \"^. d\" | awk '{print $10}'", session).stdout.gsub(/\r/,"").
+            strip.split("\n").each do |if_n|
             iface = Interface.new
             iface.device_id = if_n
             iface.device = self.exec_ssh("cat #{interface_path}/#{if_n}/dev", session).stdout.strip

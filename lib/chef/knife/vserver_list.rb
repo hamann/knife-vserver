@@ -79,14 +79,18 @@ class Chef
 
       def process(node, session)
         h = ::Knife::Vserver::Host.create(node, session)
-        ui.info "\nCGroups enabled: #{h.cgroups_enabled}\n\n"
+        ui.info "\nKernel: #{h.kernel_version}"
+        ui.info "util-vserver: #{h.util_vserver_version}"
+        ui.info "cgroups enabled: #{h.cgroups_enabled}"
+        ui.info "configuration path: #{h.config_path}\n\n"
 
         h.containers.sort { |n, m| n.ctx <=> m.ctx }.each do |c|
           ui.info "\tContext:\t#{c.ctx}"
           ui.info "\tName:\t\t#{c.name}"
           ui.info "\tHostname:\t#{c.hostname}"
           ui.info "\tIs Running:\t#{c.is_running}"
-          ui.info "\tInterfaces:\t#{c.interfaces.join(", ")}"
+          ui.info "\tInterfaces:"
+          c.interfaces.each {|i| ui.info("\t\t\t#{i.address}\t#{i.device_id}:#{i.device}")}
           ui.info "\tRam:\t\t#{c.ram_to_s}"
           ui.info "\tSwap:\t\t#{c.swap_to_s}"
           ui.info "\n\n"
