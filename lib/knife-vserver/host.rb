@@ -28,6 +28,23 @@ module Knife
         ShellCommand.exec("sudo " + cmd, @session, { :dont_raise_error => !raise_error })
       end
 
+      def start_container(container)
+        return if container.is_running
+        exec_ssh("vserver #{container.name} start")
+      end
+
+      def stop_container(container)
+        return unless container.is_running
+        exec_ssh("vserver #{container.name} stop")
+      end
+
+      def delete_container!(container)
+        exec_ssh("vserver #{container.name} stop") if container.is_running
+
+        cmd = "echo y | sudo vserver #{container.name} delete"
+        exec_ssh(cmd)
+      end
+
       def create_new_container!(container)
         validate_new_container(container)
         load_dummy_module
