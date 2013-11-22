@@ -2,9 +2,9 @@ require 'chef/knife/vserver_base'
 
 class Chef
   class Knife
-    class VserverAddAddress < VserverBase
+    class VserverRemoveAddress < VserverBase
 
-      banner 'knife vserver add address SERVER (options)'
+      banner 'knife vserver remove address SERVER (options)'
 
       deps do
         require 'net/ssh'
@@ -77,7 +77,7 @@ class Chef
       option :container_addresses,
         :short => "-I ADDRESSES",
         :long => "--container-addresses",
-        :description => "Comma seperated list of IP Addresses to add (e.g. \"192.168.10.2/24, 10.20.20.16/26\")",
+        :description => "Comma seperated list of IP Addresses to remove (e.g. \"192.168.10.2/24, 10.20.20.16/26\")",
         :proc => Proc.new { |addresses| addresses.split(',')},
         :default => Array.new
 
@@ -108,21 +108,27 @@ class Chef
         config[:container_addresses].each { |addr| interfaces << ::Knife::Vserver::Interface.new(addr.strip) }
 
         interfaces.each do |iface|
-          iface_to_add = nil
+          iface_to_delete = nil
           container.interfaces.each do |c_iface|
             if c_iface.address == iface.address &&
               c_iface.netmask == iface.netmask
-              iface_to_add = c_iface
+              iface_to_delete = c_iface
               break
             end
           end
-          if iface_to_add
-            ui.error("#{iface.address}/#{iface.prefix} already exists!")
+          unless iface_to_delete
+            ui.error("#{iface.address}/#{iface.prefix} doesn't exist!")
             exit 1
           end
+          unless iface_to_delete.device =~ /dummy/
+            ui.error("#{iface.address}/#{iface.prefix} can not be removed!") 
+            exit 1
+          end
+          iface.device = iface_to_delete.device
+          iface.device_id = iface_to_delete.device_id
         end
 
-        host.add_new_interfaces(container, interfaces) 
+        host.remove_interfaces(container, interfaces) 
         ui.info("done")
       end
     end

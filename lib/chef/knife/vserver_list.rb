@@ -90,7 +90,8 @@ class Chef
           ui.info "\tHostname:\t#{c.hostname}"
           ui.info "\tIs Running:\t#{c.is_running}"
           ui.info "\tInterfaces:"
-          c.interfaces.each {|i| ui.info("\t\t\t#{i.address}\t#{i.device_id}:#{i.device}")}
+          c.interfaces.each {|i| ui.info("\t\t\t#{i.address}/#{i.prefix}\t" + 
+                                         "#{i.device_id}:#{i.device}")}
           ui.info "\tRam:\t\t#{c.ram_to_s}"
           ui.info "\tSwap:\t\t#{c.swap_to_s}"
           ui.info "\n\n"

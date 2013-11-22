@@ -88,11 +88,10 @@ module Knife
           create_interface_files(container, iface)
 
           if container.is_running
-            ip = IPAddress("#{iface.address}/#{iface.netmask}")
             exec_ssh("ifconfig #{iface.device} up")
-            exec_ssh("ip addr add #{ip.to_s}/#{ip.prefix} dev #{iface.device}")
-            exec_ssh("ifconfig #{iface.device} broadcast #{ip.broadcast.to_s}")
-            exec_ssh("naddress --add --nid #{container.ctx} --ip #{ip.to_s}/#{ip.prefix}")
+            exec_ssh("ip addr add #{iface.address}/#{iface.prefix} dev #{iface.device}")
+            exec_ssh("ifconfig #{iface.device} broadcast #{iface.broadcast}")
+            exec_ssh("naddress --add --nid #{container.ctx} --ip #{iface.address}/#{iface.prefix}")
           end
         end
       end
@@ -104,18 +103,54 @@ module Knife
         exec_ssh("sh -c \"#{cmd}\"")
       end
 
+      def remove_interfaces(container, interfaces)
+        return if interfaces.count == 0
+
+        if container.is_running
+          interfaces.each do |iface|
+            exec_ssh("naddress --remove --nid #{container.ctx} --ip #{iface.address}/#{iface.prefix}")
+            exec_ssh("ip addr del #{iface.address}/#{iface.prefix} dev #{iface.device}")
+            exec_ssh("ifconfig #{iface.device} down")
+          end
+        end
+
+        remove_interface_files(container)
+
+        interfaces.each do |iface|
+          iface_to_delete = nil
+          container.interfaces.each do |c_iface|
+            if c_iface.address == iface.address &&
+              c_iface.netmask == iface.netmask
+              iface_to_delete = c_iface
+              break
+            end
+          end
+          container.interfaces.delete_if { |n| n == iface_to_delete } if iface_to_delete
+        end
+
+        container.interfaces = Interface.reorder_device_ids(container.interfaces)
+        container.interfaces.each { |iface| create_interface_files(container, iface) }
+      end
+
+      def remove_interface_files(container)
+        paths = Array.new
+        container.interfaces.each do |iface|
+          paths << "#{container.config_path}/interfaces/#{iface.device_id}"
+        end
+        exec_ssh("rm -rf #{paths.join(" ")}")
+      end
+
       def add_tinc_interfaces(container)
         tinc_ifaces = container.interfaces.select { |n| n.is_tinc_interface }
         return if tinc_ifaces.count == 0
         tinc_ifaces.each do |iface|
           create_interface_files(container, iface)
-          ip = IPAddress("#{iface.address}/#{iface.netmask}")
           path = "/etc/tinc/#{iface.device}/up.d/vserver-up"
-          cmd = "echo ip addr add #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
+          cmd = "echo ip addr add #{iface.address}/#{iface.prefix} dev #{iface.device} >> #{path}"
           exec_ssh("sh -c \"#{cmd}\"")
 
           path = "/etc/tinc/#{iface.device}/down.d/vserver-down"
-          cmd = "echo ip addr del #{iface.address}/#{ip.prefix} dev #{iface.device} >> #{path}"
+          cmd = "echo ip addr del #{iface.address}/#{iface.prefix} dev #{iface.device} >> #{path}"
           exec_ssh("sh -c \"#{cmd}\"")
         end
       end
