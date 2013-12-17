@@ -231,8 +231,8 @@ module Knife
 
       def apply_memory_limits_rlimits(container)
         rlimit_path = "#{container.config_path}/rlimits"
-        ram = (container.ram.to_f / 4).to_i
-        swap = ((container.ram + container.swap).to_f / 4).to_i
+        ram = (container.ram.to_f / 1024 / 4).to_i
+        swap = ((container.ram + container.swap).to_f / 1024 / 4).to_i
         cmd = "mkdir -p #{rlimit_path}; echo #{ram} > #{rlimit_path}/rss.soft; echo #{swap} > #{rlimit_path}/rss.hard;"
         exec_ssh("sh -c \"#{cmd}\"")
 
