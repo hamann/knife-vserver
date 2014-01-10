@@ -77,7 +77,7 @@ class Chef
       option :container_addresses,
         :short => "-I ADDRESSES",
         :long => "--container-addresses",
-        :description => "ADDRESSES is a comma seperated list of ip addresses",
+        :description => "ADDRESSES is a comma seperated list of ip addresses (e.g. 'eth0|172.20.0.15,eth0|172.28.1.3')",
         :proc => Proc.new { |addresses| addresses.split(',') },
         :default => Array.new
 

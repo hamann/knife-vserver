@@ -47,16 +47,12 @@ module Knife
 
       def create_new_container!(container)
         validate_new_container(container)
-        load_dummy_module
 
         container.ctx = next_context_id
-        dummy_ifs = unused_dummy_interfaces
 
         cmd_addresses = Array.new
         container.interfaces.each do |iface|
           next if iface.is_tinc_interface
-
-          iface.device = dummy_ifs.slice!(0)
           cmd_addresses << "--interface #{iface.device}:#{iface.address}/#{iface.netmask}"
         end
 
@@ -93,11 +89,8 @@ module Knife
       end
 
       def add_new_interfaces(container, interfaces)
-        dummy_ifs = unused_dummy_interfaces
         interfaces.each do |iface|
           next if iface.is_tinc_interface
-
-          iface.device = dummy_ifs.slice!(0)
           device_ids = Array.new
           container.interfaces.each { |cif| device_ids << cif.device_id }
           iface.device_id = device_ids.sort.last + 1
@@ -105,7 +98,6 @@ module Knife
           create_interface_files(container, iface)
 
           if container.is_running
-            exec_ssh("ifconfig #{iface.device} up")
             exec_ssh("ip addr add #{iface.address}/#{iface.prefix} dev #{iface.device}")
             exec_ssh("ifconfig #{iface.device} broadcast #{iface.broadcast}")
             exec_ssh("naddress --add --nid #{container.ctx} --ip #{iface.address}/#{iface.prefix}")
@@ -127,7 +119,6 @@ module Knife
           interfaces.each do |iface|
             exec_ssh("naddress --remove --nid #{container.ctx} --ip #{iface.address}/#{iface.prefix}")
             exec_ssh("ip addr del #{iface.address}/#{iface.prefix} dev #{iface.device}")
-            exec_ssh("ifconfig #{iface.device} down")
           end
         end
 
@@ -249,30 +240,6 @@ module Knife
           ids.delete_if { |id| c.ctx.to_s == id.to_s }
         end
         ids.first
-      end
-
-      def unused_dummy_interfaces
-        result = Array.new
-        used = used_dummy_interfaces
-        0.upto(39) do |idx|
-          name = "dummy#{idx}"
-          result << name unless used.include?(name)
-        end
-        result
-      end
-
-      def used_dummy_interfaces
-        result = Array.new
-        @containers.each do |c|
-          c.interfaces.each do |iface|
-            result << iface.device if iface.device =~ /dummy/
-          end
-        end
-        result
-      end
-
-      def load_dummy_module
-        exec_ssh("modprobe dummy numdummies=40")
       end
 
       def validate_new_container(container)

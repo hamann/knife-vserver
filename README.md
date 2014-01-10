@@ -62,7 +62,7 @@ Create a container on server containerhost.example.net with 1024 MB Ram, 2048 MB
 
 ```sh
 $ knife vserver create containerhost.example.net -C testcontainer1 \ 
-  -H 'testcontainer1.example.net' -R 1024 -S 2048 -I "10.20.20.2/26,172.30.0.1/16"
+  -H 'testcontainer1.example.net' -R 1024 -S 2048 -I "eth0|10.20.20.2/26,eth0|172.30.0.1/16"
 ```
 modify its memory settings
 
@@ -74,7 +74,7 @@ add an aditional IP Address
 
 ```sh
 $ knife vserver add address containerhost.example.net -C testcontainer1 \
-  -I "192.168.100.2/24"
+  -I "eth0|192.168.100.2/24"
 ```
 and remove it 
 
