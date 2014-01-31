@@ -77,7 +77,7 @@ class Chef
       option :container_addresses,
         :short => "-I ADDRESSES",
         :long => "--container-addresses",
-        :description => "Comma seperated list of IP Addresses to add (e.g. \"192.168.10.2/24, 10.20.20.16/26\")",
+        :description => "Comma seperated list of IP Addresses to add (e.g. \"eth0|192.168.10.2/24, eth0|10.20.20.16/26\")",
         :proc => Proc.new { |addresses| addresses.split(',')},
         :default => Array.new
 
@@ -105,7 +105,12 @@ class Chef
         end
 
         interfaces = Array.new
-        config[:container_addresses].each { |addr| interfaces << ::Knife::Vserver::Interface.new(addr.strip) }
+        config[:container_addresses].each do |addr|
+          device, ip = addr.split("|")
+          iface = ::Knife::Vserver::Interface.new(ip.strip)
+          iface.device = device.strip
+          interfaces << iface
+        end
 
         interfaces.each do |iface|
           iface_to_add = nil

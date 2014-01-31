@@ -105,7 +105,10 @@ class Chef
         end
 
         interfaces = Array.new
-        config[:container_addresses].each { |addr| interfaces << ::Knife::Vserver::Interface.new(addr.strip) }
+        config[:container_addresses].each do |addr| 
+          iface = ::Knife::Vserver::Interface.new(addr.strip)
+          interfaces << iface
+        end
 
         interfaces.each do |iface|
           iface_to_delete = nil
@@ -120,10 +123,7 @@ class Chef
             ui.error("#{iface.address}/#{iface.prefix} doesn't exist!")
             exit 1
           end
-          unless iface_to_delete.device =~ /dummy/
-            ui.error("#{iface.address}/#{iface.prefix} can not be removed!") 
-            exit 1
-          end
+          
           iface.device = iface_to_delete.device
           iface.device_id = iface_to_delete.device_id
         end

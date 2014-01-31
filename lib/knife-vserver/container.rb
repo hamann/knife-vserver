@@ -50,8 +50,10 @@ module Knife
         container = Container.new(config[:container_name], h)
         dev_id = 0
         config[:container_addresses].each do |addr|
-          iface = Interface.new(addr)
+          device, ip = addr.split("|")
+          iface = Interface.new(ip.strip)
           iface.device_id = dev_id
+          iface.device = device.strip
           dev_id = dev_id + 1
 
           container.interfaces << iface
