@@ -45,7 +45,6 @@ This plugin was developed and tested on Debian (squeeze/wheezy)
 * Recent Linux VServer Kernel on hosts
 * Recent `util-vserver` version
 * all commands are executed by SSH
-* IP addresses are assigned to `dummy` interfaces
 * Memory modification and adding/removing addresses will be synced with vserver configuration files
 
 
